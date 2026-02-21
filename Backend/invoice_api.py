@@ -3,7 +3,6 @@ import psycopg2
 from datetime import datetime 
 from flask import Flask,jsonify,request
 from db_config import DB_CONFIG
-from db_config import INVOICE_PARENT
 from flask import send_file
 
 import os
