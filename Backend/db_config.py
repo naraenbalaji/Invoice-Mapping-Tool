@@ -8,6 +8,3 @@ DB_CONFIG = {
 "sslmode":"require",
     "password":"Srirama@2209",
 }
-
-
-INVOICE_PARENT = "/Users/naraenbalaji/Desktop/Whirldata Task/BE/uploads"
