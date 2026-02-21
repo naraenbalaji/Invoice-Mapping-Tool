@@ -10,7 +10,7 @@ import TemplateMappingDetail from "./pages/TemplateMappingDetail";
 import ExtractInvoice from "./pages/ExtractInvoice";
 import ConsoleCleaner from "./pages/ConsoleCleaner";
 
-export const url = "http://192.168.1.2:5001/";
+export const url = "https://invoice-mapping-tool.onrender.com/";
 
 function App() {
 
