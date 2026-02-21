@@ -4,7 +4,7 @@ from datetime import datetime
 from flask import Flask,jsonify,request
 from db_config import DB_CONFIG
 from flask import send_file
-
+from flask_cors import CORS
 import os
 import random
 import string
@@ -23,6 +23,8 @@ supabase = create_client(url, key)
 
 app = Flask("invoice-mgt-app")
 app.config["SECURITY_TOKEN"] = [{"ApiKeyAuth": ["123456789"]}]
+
+CORS(app)
 
 
 def execute_query(query, params, fetch=False):
