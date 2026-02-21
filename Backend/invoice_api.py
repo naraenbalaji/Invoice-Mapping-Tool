@@ -26,11 +26,6 @@ app = Flask("invoice-mgt-app")
 app.config["SECURITY_TOKEN"] = [{"ApiKeyAuth": ["123456789"]}]
 
 
-UPLOAD_FOLDER = INVOICE_PARENT+"/uploads"
-
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-
 def execute_query(query, params, fetch=False):
     conn = None
     try:
