@@ -12,6 +12,14 @@ import string
 import fitz
 import re
 
+from supabase import create_client
+import os
+
+url = "https://lcdiarvjzwumlthwosry.supabase.co"
+key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxjZGlhcnZqend1bWx0aHdvc3J5Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MTY1MDY1MywiZXhwIjoyMDg3MjI2NjUzfQ.zHOX78MqsZHkUzulnIAHUiL0q5IECAec2DMXwN8OiIE"
+
+supabase = create_client(url, key)
+
 
 
 app = Flask("invoice-mgt-app")
@@ -131,7 +139,6 @@ def templates(vendor_id):
             for item in result:
                 template_id = item[0]
 
-                # If template not yet added, create base structure
                 if template_id not in templates_dict:
                     templates_dict[template_id] = {
                         "template_id": template_id,
@@ -142,7 +149,6 @@ def templates(vendor_id):
                         "template_fields": []
                     }
 
-                # Append field details
                 templates_dict[template_id]["template_fields"].append({
                     "field_type": item[5],
                     "page_num": item[6],
@@ -153,7 +159,6 @@ def templates(vendor_id):
                     "field_datatype": item[11]
                 })
 
-            # Convert dict → list
             final_result = list(templates_dict.values())
 
             response = jsonify({
@@ -208,7 +213,6 @@ def templates_get():
             for item in result:
                 template_id = item[0]
 
-                # If template not yet added, create base structure
                 if template_id not in templates_dict:
                     templates_dict[template_id] = {
                         "template_id": template_id,
@@ -219,7 +223,6 @@ def templates_get():
                         "template_fields": []
                     }
 
-                # Append field details
                 templates_dict[template_id]["template_fields"].append({
                     "field_type": item[5],
                     "page_num": item[6],
@@ -230,7 +233,6 @@ def templates_get():
                     "field_datatype": item[11]
                 })
 
-            # Convert dict → list
             final_result = list(templates_dict.values())
 
             response = jsonify({
@@ -373,16 +375,29 @@ def invoices():
 
             if not files:
                 return jsonify({"status":"Failed","meassage":"File not provided"}), 400
+            
+            file_path = f"{files.filename}"
+
             try:
-                file_path = os.path.join(UPLOAD_FOLDER, file_name)
-                files.save(file_path)
+                file_bytes = files.read()
+
+                print(key[:10])
+
+                supabase.storage.from_("pdf-files").upload(
+                    file_path,
+                    file_bytes,
+                    {"content-type": "application/pdf"}
+                )
+
+                public_url = supabase.storage.from_("pdf-files").get_public_url(file_path)
+
             except Exception as e:
                 raise e
 
             invoice_post = """INSERT INTO invoices(
                                 vendor_id, upload_date, status, total_amount, extracted_date, created_by, uploaded_invoice)
                                 VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id"""
-            params = (vendor_id, upload_date, "Pending", total_amount, extracted_date, created_by, file_path)
+            params = (vendor_id, upload_date, "Pending", total_amount, extracted_date, created_by, public_url)
 
             result = execute_query(invoice_post, params, fetch=True)
 
@@ -517,65 +532,65 @@ def get_invoices():
 @app.route('/get/invoices/file/<int:invoice_id>', methods=['GET'])
 def get_invoices_file(invoice_id):
     try:
-        if request.method == 'GET':
-            qFetch = """SELECT uploaded_invoice FROM invoices WHERE id=%s
-            """
-            params = (invoice_id,) 
-            result = execute_query(qFetch, params, fetch=True)
+        qFetch = """SELECT uploaded_invoice FROM invoices WHERE id=%s"""
+        params = (invoice_id,)
+        result = execute_query(qFetch, params, fetch=True)
 
-            if not result:
-                return jsonify({
-                    "status": "Failed",
-                    "message": "Invoice not found"
-                }), 404
+        if not result:
+            return jsonify({
+                "status": "Failed",
+                "message": "Invoice not found"
+            }), 404
 
-            file_path = result[0][0]
+        file_path = result[0][0]   # Example: "invoice_123.pdf"
 
-            if not file_path or not os.path.exists(file_path):
-                return jsonify({
-                    "status": "Failed",
-                    "message": "File not found on server"
-                }), 404
+        if not file_path:
+            return jsonify({
+                "status": "Failed",
+                "message": "File path not stored"
+            }), 404
 
-            return send_file(
-                file_path,
-            )
+        # Download file from Supabase Storage
+        file_bytes = supabase.storage.from_("pdf-files").download(file_path)
 
-           
-        else:
-                raise Exception("Invalid request type")
+        if not file_bytes:
+            return jsonify({
+                "status": "Failed",
+                "message": "File not found in storage"
+            }), 404
 
-        return response, 200
+        return send_file(
+            io.BytesIO(file_bytes),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=file_path
+        )
 
     except Exception as e:
-        return jsonify({"status":"Internal Server Error","error":str(e)}), 500
-
+        return jsonify({
+            "status": "Internal Server Error",
+            "error": str(e)
+        }), 500
 
 def clean_double_field(value):
     if not value:
         return None
 
-    # Remove common currency symbols explicitly
     currency_symbols = ["$", "€", "£", "₹", "¥", "₽"]
     for symbol in currency_symbols:
         value = value.replace(symbol, "")
 
-    # Remove commas (1,234.50 → 1234.50)
     value = value.replace(",", "")
 
-    # Keep only digits, decimal point and minus
     value = re.sub(r"[^0-9.\-]", "", value)
 
-    # Keep only first decimal point
     if value.count(".") > 1:
         first, *rest = value.split(".")
         value = first + "." + "".join(rest)
 
-    # Keep only one minus at beginning
     if value.count("-") > 1:
         value = "-" + value.replace("-", "")
 
-    # Avoid invalid values
     if value in ("", ".", "-"):
         return None
 
@@ -600,12 +615,16 @@ def invoices_extract(invoice_id):
 
             doc = fitz.open(file_path)
 
-            fetch_template_fields = """SELECT template_id, field_type, page_num, x, y, width, height, field_datatype FROM template_fields tf
-            JOIN templates t ON t.id = tf.template_id WHERE template_id=%s
+            fetch_template_fields = """SELECT tf.template_id, field_type, page_num, x, y, width, height, field_datatype, i.id FROM template_fields tf
+            JOIN templates t ON t.id = tf.template_id 
+            JOIN invoices i ON t.id = i.template_id
+            WHERE tf.template_id=%s AND i.id=%s
             """
-            template_params = (template_id,)
+            template_params = (template_id,invoice_id)
 
             template_fields = execute_query(fetch_template_fields, template_params, fetch=True)
+
+            print(template_fields)
 
             extracted_data = {}
 
@@ -629,19 +648,19 @@ def invoices_extract(invoice_id):
 
                 if field[7] == "double":
                     finaltext = clean_double_field(text)
-                    print(text, finaltext)
                     extracted_data[field[1]] = finaltext
                 else:
                     extracted_data[field[1]] = text
+                
+                print(extracted_data[field[1]])
 
-            print(extracted_data)
 
             fetch_extracter = """SELECT * FROM extracter_fields WHERE invoice_id=%s"""
             extarcter_params = (invoice_id,)
 
             current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            print(extracted_data)
+            
 
             res = execute_query(fetch_extracter, extarcter_params, fetch=True)
             extracted_data = {
